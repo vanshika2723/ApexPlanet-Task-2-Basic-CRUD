@@ -131,7 +131,63 @@ Register an account, log in, and start managing blog posts.
 - HTML escaping with `htmlspecialchars()`.
 
 **Note:** This is an internship learning project. CSRF protection and post ownership authorization should be added before production use.
+## 🚀 Task 3 — Advanced Features Implementation
 
+As part of Task 3 of the ApexPlanet Web Development Internship, the Blog CRUD Application was enhanced with advanced features to improve usability, navigation, and user experience.
+
+### ✨ New Features Implemented
+
+**1. Search Functionality**
+- Added a search form to the blog dashboard.
+- Search blog posts by title.
+- Search blog posts by content.
+- Used PHP and MySQL queries to retrieve matching posts.
+- Displayed appropriate messages when no matching posts were found.
+- Implemented prepared statements for secure database queries.
+
+**2. Pagination**
+- Implemented pagination on the posts listing page.
+- Displayed a maximum of 5 posts per page.
+- Added Previous and Next navigation.
+- Added page number navigation.
+- Maintained search filters while navigating between pages.
+
+**3. User Interface Improvements**
+- Improved the dashboard layout and visual appearance.
+- Added a modern search bar.
+- Enhanced blog post cards and action buttons.
+- Improved spacing, typography, colors, and navigation.
+- Added responsive styling for desktop and mobile devices.
+- Improved the overall user experience.
+
+### 🛠️ Technologies Used in Task 3
+
+- PHP for search and pagination logic.
+- MySQL for database queries.
+- HTML5 for page structure.
+- CSS3 for responsive UI improvements.
+- PDO prepared statements for database security.
+
+### 🎯 Task 3 Learning Outcomes
+
+- Implementing database-driven search functionality.
+- Using SQL `LIKE` queries for searching.
+- Understanding SQL `LIMIT` and `OFFSET`.
+- Implementing pagination using PHP.
+- Maintaining search parameters across pages.
+- Improving responsive web application design.
+- Enhancing application usability and navigation.
+
+
+### 📌 Internship Task Summary
+
+| Task | Description |
+|---|---|
+| Task 2 | Basic CRUD Application |
+| Task 3 | Advanced Features Implementation |
+| Project | Blog Management System |
+| Developer | Vanshika Khandelwal |
+| Organization | ApexPlanet Software Pvt. Ltd. |
 ## 🎯 Learning Outcomes
 
 - Understanding PHP and MySQL integration.
