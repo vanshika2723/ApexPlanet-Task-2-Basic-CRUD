@@ -9,14 +9,66 @@ if (!isset($_SESSION["user_id"])) {
     exit;
 }
 
+// Search and pagination settings
+$search = trim($_GET["search"] ?? "");
+$postsPerPage = 5;
+$page = filter_input(INPUT_GET, "page", FILTER_VALIDATE_INT);
+$page = ($page && $page > 0) ? $page : 1;
+
+$posts = [];
+$totalPosts = 0;
+$filteredPosts = 0;
+$totalPages = 0;
+
 try {
-    $stmt = $pdo->query(
-        "SELECT id, title, content, created_at FROM posts ORDER BY created_at DESC"
-    );
-    $posts = $stmt->fetchAll();
+    // Total number of posts (independent of the search filter)
+    $totalStmt = $pdo->query("SELECT COUNT(*) FROM posts");
+    $totalPosts = (int) $totalStmt->fetchColumn();
+
+    // Build a safe search condition for title and content
+    $whereSql = "";
+    $params = [];
+
+    if ($search !== "") {
+        $whereSql = " WHERE title LIKE :title OR content LIKE :content";
+        $keyword = "%" . $search . "%";
+        $params = [
+            ":title" => $keyword,
+            ":content" => $keyword
+        ];
+    }
+
+    // Count matching posts before calculating pagination
+    $countStmt = $pdo->prepare("SELECT COUNT(*) FROM posts" . $whereSql);
+    $countStmt->execute($params);
+    $filteredPosts = (int) $countStmt->fetchColumn();
+
+    $totalPages = (int) ceil($filteredPosts / $postsPerPage);
+    if ($totalPages > 0 && $page > $totalPages) {
+        $page = $totalPages;
+    }
+
+    $offset = ($page - 1) * $postsPerPage;
+
+    // Fetch only the posts required for the current page
+    $sql = "SELECT id, title, content, created_at FROM posts"
+         . $whereSql
+         . " ORDER BY created_at DESC LIMIT :limit OFFSET :offset";
+
+    $stmt = $pdo->prepare($sql);
+
+    foreach ($params as $key => $value) {
+        $stmt->bindValue($key, $value, PDO::PARAM_STR);
+    }
+
+    $stmt->bindValue(":limit", $postsPerPage, PDO::PARAM_INT);
+    $stmt->bindValue(":offset", $offset, PDO::PARAM_INT);
+    $stmt->execute();
+
+    $posts = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
 } catch (PDOException $e) {
     error_log("Dashboard error: " . $e->getMessage());
-    $posts = [];
     $errorMessage = "Unable to load posts. Please try again.";
 }
 ?>
@@ -687,6 +739,95 @@ a:focus-visible {
     }
 }
 
+
+/* =========================
+   16. Search Form
+========================= */
+.search-panel {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 18px;
+    margin: 0 0 30px;
+    box-shadow: 0 7px 24px rgba(76, 29, 149, 0.04);
+}
+.search-input-wrap {
+    display: flex;
+    align-items: center;
+    flex: 1 1 260px;
+    gap: 10px;
+    min-width: 0;
+    background: #faf9ff;
+    border: 1px solid #e5def5;
+    border-radius: 10px;
+    padding: 0 14px;
+}
+.search-input-wrap span { color: var(--muted); font-size: 18px; }
+.search-input {
+    width: 100%;
+    min-width: 0;
+    padding: 13px 0;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: var(--text);
+    font-size: 14px;
+}
+.search-input-wrap:focus-within {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(139, 92, 246, .12);
+}
+.search-panel .btn { padding: 12px 19px; }
+.search-hint {
+    flex-basis: 100%;
+    color: var(--muted);
+    font-size: 12px;
+}
+.search-summary {
+    color: var(--muted);
+    font-size: 13px;
+    margin: -10px 0 20px;
+}
+.pagination {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 34px 0 10px;
+}
+.pagination a, .pagination span {
+    min-width: 40px;
+    height: 40px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 13px;
+    border: 1px solid #e5def5;
+    border-radius: 10px;
+    background: #fff;
+    color: #6d28d9;
+    font-size: 13px;
+    font-weight: 700;
+}
+.pagination a:hover { background: #f3e8ff; border-color: #c4b5fd; }
+.pagination .current {
+    background: linear-gradient(135deg, #8b5cf6, #6d28d9);
+    color: #fff;
+    border-color: transparent;
+}
+.pagination .disabled { color: #b8b1c5; background: #f8f7fb; }
+@media (max-width: 600px) {
+    .search-panel { padding: 14px; }
+    .search-panel .btn { flex: 1; }
+    .pagination { gap: 6px; }
+    .pagination a, .pagination span { min-width: 36px; height: 36px; padding: 0 10px; }
+}
+
     </style>
 
 </head>
@@ -763,7 +904,7 @@ a:focus-visible {
             </p>
 
             <span class="stats-number">
-                <?= count($posts) ?>
+                <?= $totalPosts ?>
             </span>
 
         </div>
@@ -806,6 +947,26 @@ a:focus-visible {
 
     <?php endif; ?>
 
+    <!-- Search Posts -->
+    <form class="search-panel" method="GET" action="dashboard.php">
+        <div class="search-input-wrap">
+            <span aria-hidden="true">⌕</span>
+            <input
+                class="search-input"
+                type="search"
+                name="search"
+                value="<?= htmlspecialchars($search, ENT_QUOTES, "UTF-8") ?>"
+                placeholder="Search posts by title or content..."
+                aria-label="Search posts by title or content"
+            >
+        </div>
+        <button type="submit" class="btn">Search Posts</button>
+        <?php if ($search !== ""): ?>
+            <a href="dashboard.php" class="btn btn-secondary">Clear Search</a>
+        <?php endif; ?>
+        <p class="search-hint">Enter a keyword to find matching post titles or content.</p>
+    </form>
+
     <!-- Posts Section -->
 
     <section class="posts-section">
@@ -814,9 +975,21 @@ a:focus-visible {
             All Blog Posts
 
             <span class="posts-count">
-                <?= count($posts) ?>
+                <?= $filteredPosts ?>
             </span>
         </h2>
+
+        <p class="search-summary">
+            <?php if ($search !== ""): ?>
+                Found <?= $filteredPosts ?> result(s) for
+                “<?= htmlspecialchars($search, ENT_QUOTES, "UTF-8") ?>”.
+            <?php else: ?>
+                Showing <?= $filteredPosts ?> of <?= $totalPosts ?> posts.
+            <?php endif; ?>
+            <?php if ($filteredPosts > 0): ?>
+                Page <?= $page ?> of <?= $totalPages ?>.
+            <?php endif; ?>
+        </p>
 
         <?php if (empty($posts)): ?>
 
@@ -826,16 +999,22 @@ a:focus-visible {
                     ✎
                 </div>
 
-                <h3>No Posts Yet!</h3>
+                <h3><?= $search !== "" ? "No Matching Posts Found" : "No Posts Yet!" ?></h3>
 
                 <p>
-                    Your blogging journey starts here.
-                    Create your first post and share your ideas.
+                    <?php if ($search !== ""): ?>
+                        Try another keyword or clear your search to see all posts.
+                    <?php else: ?>
+                        Your blogging journey starts here.
+                        Create your first post and share your ideas.
+                    <?php endif; ?>
                 </p>
 
-                <a href="create.php" class="btn">
-                    + Create First Post
-                </a>
+                <?php if ($search !== ""): ?>
+                    <a href="dashboard.php" class="btn">View All Posts</a>
+                <?php else: ?>
+                    <a href="create.php" class="btn">+ Create First Post</a>
+                <?php endif; ?>
 
             </div>
 
@@ -909,6 +1088,30 @@ a:focus-visible {
                 <?php endforeach; ?>
 
             </div>
+
+            <?php if ($totalPages > 1): ?>
+                <nav class="pagination" aria-label="Posts pagination">
+                    <?php if ($page > 1): ?>
+                        <a href="?<?= http_build_query(["search" => $search, "page" => $page - 1]) ?>" aria-label="Previous page">‹ Prev</a>
+                    <?php else: ?>
+                        <span class="disabled">‹ Prev</span>
+                    <?php endif; ?>
+
+                    <?php for ($pageNumber = 1; $pageNumber <= $totalPages; $pageNumber++): ?>
+                        <?php if ($pageNumber === $page): ?>
+                            <span class="current" aria-current="page"><?= $pageNumber ?></span>
+                        <?php else: ?>
+                            <a href="?<?= http_build_query(["search" => $search, "page" => $pageNumber]) ?>"><?= $pageNumber ?></a>
+                        <?php endif; ?>
+                    <?php endfor; ?>
+
+                    <?php if ($page < $totalPages): ?>
+                        <a href="?<?= http_build_query(["search" => $search, "page" => $page + 1]) ?>" aria-label="Next page">Next ›</a>
+                    <?php else: ?>
+                        <span class="disabled">Next ›</span>
+                    <?php endif; ?>
+                </nav>
+            <?php endif; ?>
 
         <?php endif; ?>
 
