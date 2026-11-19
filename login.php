@@ -1,47 +1,96 @@
 
 <?php
+
 session_start();
 require_once "db.php";
 
 $message = "";
 
+// Redirect already logged-in users
 if (isset($_SESSION["user_id"])) {
     header("Location: dashboard.php");
     exit;
 }
 
+// Generate CSRF token
+if (empty($_SESSION["csrf_token"])) {
+    $_SESSION["csrf_token"] = bin2hex(random_bytes(32));
+}
+
 if ($_SERVER["REQUEST_METHOD"] === "POST") {
+
     $username = trim($_POST["username"] ?? "");
     $password = $_POST["password"] ?? "";
+    $csrfToken = $_POST["csrf_token"] ?? "";
 
-    if ($username === "" || $password === "") {
-        $message = "Please enter your username and password.";
+    // CSRF validation
+    if (
+        !is_string($csrfToken) ||
+        !hash_equals($_SESSION["csrf_token"], $csrfToken)
+    ) {
+        $message = "Invalid request. Please refresh the page and try again.";
+
+    } elseif (
+        $username === "" ||
+        $password === "" ||
+        strlen($username) > 100 ||
+        strlen($password) > 255
+    ) {
+        $message = "Please enter valid username and password.";
+
     } else {
+
         try {
+
+            // Prepared statement
             $stmt = $pdo->prepare(
-                "SELECT id, username, password FROM users WHERE username = ?"
+                "SELECT id, username, password, role
+                 FROM users
+                 WHERE username = ?
+                 LIMIT 1"
             );
+
             $stmt->execute([$username]);
 
             $user = $stmt->fetch();
 
-            if ($user && password_verify($password, $user["password"])) {
+            if (
+                $user &&
+                password_verify($password, $user["password"])
+            ) {
+
                 session_regenerate_id(true);
 
+                // Save authenticated user information
                 $_SESSION["user_id"] = $user["id"];
                 $_SESSION["username"] = $user["username"];
 
+                // Save user role
+                $_SESSION["role"] = $user["role"];
+
+                // Regenerate CSRF token after login
+                $_SESSION["csrf_token"] = bin2hex(random_bytes(32));
+
                 header("Location: dashboard.php");
                 exit;
+
             } else {
+
                 $message = "Invalid username or password.";
+
             }
+
         } catch (PDOException $e) {
+
             error_log("Login error: " . $e->getMessage());
+
             $message = "Something went wrong. Please try again.";
+
         }
+
     }
 }
+
 ?>
 
 <!DOCTYPE html>
@@ -49,21 +98,17 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
 <head>
 
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-    <title>Login | BlogSpace</title>
+<title>Login | BlogSpace</title>
 
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 
-    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 
-    <style>
-
-/* =========================
-   1. Global Styles
-========================= */
+<style>
 
 * {
     margin: 0;
@@ -83,10 +128,6 @@ body {
 
     background-attachment: fixed;
 }
-
-/* =========================
-   2. Background Decoration
-========================= */
 
 .auth-container {
     min-height: 100vh;
@@ -124,10 +165,6 @@ body {
     box-shadow: 0 0 100px rgba(168, 85, 247, 0.15);
 }
 
-/* =========================
-   3. Login Card
-========================= */
-
 .auth-card {
     width: 100%;
     max-width: 460px;
@@ -145,10 +182,6 @@ body {
 
     animation: slideUp 0.6s ease;
 }
-
-/* =========================
-   4. Login Icon
-========================= */
 
 .login-icon {
     width: 66px;
@@ -169,10 +202,6 @@ body {
     box-shadow: 0 9px 22px rgba(109, 40, 217, 0.25);
 }
 
-/* =========================
-   5. Heading
-========================= */
-
 .auth-card h1 {
     font-family: 'Outfit', sans-serif;
     color: #2e1065;
@@ -188,10 +217,6 @@ body {
     line-height: 1.7;
     margin-bottom: 25px;
 }
-
-/* =========================
-   6. Form Fields
-========================= */
 
 form label {
     display: block;
@@ -232,10 +257,6 @@ input:focus {
     box-shadow: 0 0 0 4px rgba(139, 92, 246, 0.12);
 }
 
-/* =========================
-   7. Login Button
-========================= */
-
 .btn {
     width: 100%;
     display: flex;
@@ -272,10 +293,6 @@ input:focus {
     transform: translateY(0);
 }
 
-/* =========================
-   8. Authentication Link
-========================= */
-
 .auth-link {
     margin-top: 26px;
     padding-top: 22px;
@@ -298,10 +315,6 @@ input:focus {
     text-decoration: underline;
 }
 
-/* =========================
-   9. Error Message
-========================= */
-
 .message {
     padding: 13px 15px;
     margin: 17px 0;
@@ -319,10 +332,6 @@ input:focus {
     border: 1px solid #fecaca;
 }
 
-/* =========================
-   10. Animations
-========================= */
-
 @keyframes slideUp {
     from {
         opacity: 0;
@@ -334,10 +343,6 @@ input:focus {
         transform: translateY(0);
     }
 }
-
-/* =========================
-   11. Responsive Design
-========================= */
 
 @media (max-width: 600px) {
 
@@ -384,10 +389,6 @@ input:focus {
     }
 }
 
-/* =========================
-   12. Accessibility
-========================= */
-
 @media (prefers-reduced-motion: reduce) {
     *,
     *::before,
@@ -397,7 +398,7 @@ input:focus {
     }
 }
 
-    </style>
+</style>
 
 </head>
 
@@ -405,59 +406,69 @@ input:focus {
 
 <main class="auth-container">
 
-    <section class="auth-card">
+<section class="auth-card">
 
-        <div class="login-icon">✦</div>
+    <div class="login-icon">✦</div>
 
-        <h1>Welcome Back!</h1>
+    <h1>Welcome Back!</h1>
 
-        <p class="subtitle">
-            Login to your BlogSpace account and manage your blog posts.
-        </p>
+    <p class="subtitle">
+        Login to your BlogSpace account and manage your blog posts.
+    </p>
 
-        <?php if ($message !== ""): ?>
-            <div class="message error">
-                <?= htmlspecialchars($message) ?>
-            </div>
-        <?php endif; ?>
+    <?php if ($message !== ""): ?>
 
-        <form method="POST" action="login.php">
+        <div class="message error">
+            <?= htmlspecialchars($message, ENT_QUOTES, "UTF-8") ?>
+        </div>
 
-            <label for="username">Username</label>
+    <?php endif; ?>
 
-            <input
-                type="text"
-                id="username"
-                name="username"
-                placeholder="Enter your username"
-                autocomplete="username"
-                value="<?= htmlspecialchars($_POST["username"] ?? "", ENT_QUOTES, "UTF-8") ?>"
-                required
-            >
+    <form method="POST" action="login.php">
 
-            <label for="password">Password</label>
+        <input
+            type="hidden"
+            name="csrf_token"
+            value="<?= htmlspecialchars($_SESSION["csrf_token"], ENT_QUOTES, "UTF-8") ?>"
+        >
 
-            <input
-                type="password"
-                id="password"
-                name="password"
-                placeholder="Enter your password"
-                autocomplete="current-password"
-                required
-            >
+        <label for="username">Username</label>
 
-            <button type="submit" class="btn">
-                Login to Account &nbsp; →
-            </button>
+        <input
+            type="text"
+            id="username"
+            name="username"
+            placeholder="Enter your username"
+            autocomplete="username"
+            maxlength="100"
+            value="<?= htmlspecialchars($_POST["username"] ?? "", ENT_QUOTES, "UTF-8") ?>"
+            required
+        >
 
-        </form>
+        <label for="password">Password</label>
 
-        <p class="auth-link">
-            Don't have an account?
-            <a href="register.php">Create Account</a>
-        </p>
+        <input
+            type="password"
+            id="password"
+            name="password"
+            placeholder="Enter your password"
+            autocomplete="current-password"
+            maxlength="255"
+            required
+        >
 
-    </section>
+        <button type="submit" class="btn">
+            Login to Account &nbsp; →
+        </button>
+
+    </form>
+
+    <p class="auth-link">
+        Don't have an account?
+        <a href="register.php">Create Account</a>
+    </p>
+
+</section>
 
 </main>
 

@@ -1,62 +1,113 @@
-
 <?php
 session_start();
 require_once "db.php";
 
-$message = "";
-$messageType = "";
-
+// Redirect logged-in users
 if (isset($_SESSION["user_id"])) {
     header("Location: dashboard.php");
     exit;
 }
 
+$message = "";
+$messageType = "";
+
+// CSRF token
+if (empty($_SESSION["csrf_token"])) {
+    $_SESSION["csrf_token"] = bin2hex(random_bytes(32));
+}
+
 if ($_SERVER["REQUEST_METHOD"] === "POST") {
-    $username = trim($_POST["username"] ?? "");
-    $password = $_POST["password"] ?? "";
-    $confirmPassword = $_POST["confirm_password"] ?? "";
 
-    if ($username === "" || $password === "" || $confirmPassword === "") {
-        $message = "Please fill in all fields.";
+    // Verify CSRF token
+    $submittedToken = $_POST["csrf_token"] ?? "";
+
+    if (
+        !is_string($submittedToken) ||
+        !hash_equals($_SESSION["csrf_token"], $submittedToken)
+    ) {
+        $message = "Invalid form request. Please refresh and try again.";
         $messageType = "error";
-    } elseif (strlen($username) < 3 || strlen($username) > 100) {
-        $message = "Username must be between 3 and 100 characters.";
-        $messageType = "error";
-    } elseif (strlen($password) < 8) {
-        $message = "Password must contain at least 8 characters.";
-        $messageType = "error";
-    } elseif ($password !== $confirmPassword) {
-        $message = "Passwords do not match.";
-        $messageType = "error";
+
     } else {
-        try {
-            $check = $pdo->prepare(
-                "SELECT id FROM users WHERE username = ?"
-            );
-            $check->execute([$username]);
 
-            if ($check->fetch()) {
-                $message = "Username already exists. Please choose another.";
-                $messageType = "error";
-            } else {
-                $hashedPassword = password_hash(
-                    $password,
-                    PASSWORD_DEFAULT
-                );
+        $username = trim($_POST["username"] ?? "");
+        $password = $_POST["password"] ?? "";
+        $confirmPassword = $_POST["confirm_password"] ?? "";
 
-                $insert = $pdo->prepare(
-                    "INSERT INTO users (username, password) VALUES (?, ?)"
-                );
-
-                $insert->execute([$username, $hashedPassword]);
-
-                $message = "Registration successful! You can now log in.";
-                $messageType = "success";
-            }
-        } catch (PDOException $e) {
-            error_log("Registration error: " . $e->getMessage());
-            $message = "Something went wrong. Please try again.";
+        // Server-side validation
+        if (
+            $username === "" ||
+            $password === "" ||
+            $confirmPassword === ""
+        ) {
+            $message = "Please fill in all fields.";
             $messageType = "error";
+
+        } elseif (
+            strlen($username) < 3 ||
+            strlen($username) > 100
+        ) {
+            $message = "Username must be between 3 and 100 characters.";
+            $messageType = "error";
+
+        } elseif (strlen($password) < 8) {
+            $message = "Password must contain at least 8 characters.";
+            $messageType = "error";
+
+        } elseif ($password !== $confirmPassword) {
+            $message = "Passwords do not match.";
+            $messageType = "error";
+
+        } else {
+
+            try {
+                // Check whether username already exists
+                $check = $pdo->prepare(
+                    "SELECT id FROM users WHERE username = ? LIMIT 1"
+                );
+
+                $check->execute([$username]);
+
+                if ($check->fetch()) {
+                    $message = "Username already exists. Please choose another.";
+                    $messageType = "error";
+
+                } else {
+
+                    // Hash password securely
+                    $hashedPassword = password_hash(
+                        $password,
+                        PASSWORD_DEFAULT
+                    );
+
+                    // Always create Editor role
+                    // User cannot select Admin role
+                    $insert = $pdo->prepare(
+                        "INSERT INTO users (username, password, role)
+                         VALUES (?, ?, 'editor')"
+                    );
+
+                    $insert->execute([
+                        $username,
+                        $hashedPassword
+                    ]);
+
+                    // Refresh CSRF token
+                    $_SESSION["csrf_token"] = bin2hex(random_bytes(32));
+
+                    $message = "Registration successful! You can now log in.";
+                    $messageType = "success";
+                }
+
+            } catch (PDOException $e) {
+
+                // Log detailed error internally
+                error_log("Registration error: " . $e->getMessage());
+
+                // Display generic error
+                $message = "Something went wrong. Please try again.";
+                $messageType = "error";
+            }
         }
     }
 }
@@ -413,12 +464,19 @@ input:focus {
         </p>
 
         <?php if ($message !== ""): ?>
-            <div class="message <?= htmlspecialchars($messageType) ?>">
-                <?= htmlspecialchars($message) ?>
+            <div class="message <?= htmlspecialchars($messageType, ENT_QUOTES, "UTF-8") ?>">
+                <?= htmlspecialchars($message, ENT_QUOTES, "UTF-8") ?>
             </div>
         <?php endif; ?>
 
         <form method="POST" action="register.php">
+
+            <!-- CSRF Protection -->
+            <input
+                type="hidden"
+                name="csrf_token"
+                value="<?= htmlspecialchars($_SESSION["csrf_token"], ENT_QUOTES, "UTF-8") ?>"
+            >
 
             <label for="username">Username</label>
 

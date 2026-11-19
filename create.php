@@ -3,9 +3,22 @@
 session_start();
 require_once "db.php";
 
+// Authentication
 if (!isset($_SESSION["user_id"])) {
     header("Location: login.php");
     exit;
+}
+
+// Role-based access control
+$userRole = $_SESSION["role"] ?? "";
+if (!in_array($userRole, ["admin", "editor"], true)) {
+    http_response_code(403);
+    exit("Access denied.");
+}
+
+// CSRF token
+if (empty($_SESSION["csrf_token"])) {
+    $_SESSION["csrf_token"] = bin2hex(random_bytes(32));
 }
 
 $message = "";
@@ -15,17 +28,20 @@ $content = "";
 if ($_SERVER["REQUEST_METHOD"] === "POST") {
     $title = trim($_POST["title"] ?? "");
     $content = trim($_POST["content"] ?? "");
+    $submittedToken = $_POST["csrf_token"] ?? "";
 
-    if ($title === "" || $content === "") {
+    if (!is_string($submittedToken) ||
+        !hash_equals($_SESSION["csrf_token"], $submittedToken)) {
+        $message = "Invalid form submission. Please refresh and try again.";
+    } elseif ($title === "" || $content === "") {
         $message = "Please enter both title and content.";
-    } elseif (strlen($title) > 255) {
+    } elseif ((function_exists("mb_strlen") ? mb_strlen($title, "UTF-8") : strlen($title)) > 255) {
         $message = "Title cannot exceed 255 characters.";
     } else {
         try {
             $stmt = $pdo->prepare(
                 "INSERT INTO posts (title, content) VALUES (?, ?)"
             );
-
             $stmt->execute([$title, $content]);
 
             header("Location: dashboard.php?status=created");
@@ -133,6 +149,24 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         }
 
         .nav-links a:hover {
+            color: #7048d8;
+            background: #f1edff;
+        }
+
+        .logout-btn {
+            color: #625d79;
+            font-size: 14px;
+            font-weight: 600;
+            padding: 10px 15px;
+            border: none;
+            border-radius: 10px;
+            background: transparent;
+            cursor: pointer;
+            font-family: inherit;
+            transition: 0.25s ease;
+        }
+
+        .logout-btn:hover {
             color: #7048d8;
             background: #f1edff;
         }
@@ -443,7 +477,14 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
             <div class="nav-links">
                 <a href="dashboard.php">Dashboard</a>
-                <a href="logout.php">Logout</a>
+                <form method="POST" action="logout.php" style="display:inline;">
+                    <input
+                        type="hidden"
+                        name="csrf_token"
+                        value="<?= htmlspecialchars($_SESSION["csrf_token"], ENT_QUOTES, "UTF-8") ?>"
+                    >
+                    <button type="submit" class="logout-btn">Logout</button>
+                </form>
             </div>
 
         </div>
@@ -479,6 +520,11 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
             <?php endif; ?>
 
             <form method="POST" action="create.php">
+                <input
+                    type="hidden"
+                    name="csrf_token"
+                    value="<?= htmlspecialchars($_SESSION["csrf_token"], ENT_QUOTES, "UTF-8") ?>"
+                >
 
                 <div class="form-group">
 
@@ -512,6 +558,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                         id="content"
                         name="content"
                         rows="8"
+                        minlength="1"
                         placeholder="Start writing your story here..."
                         required
                     ><?= htmlspecialchars($content, ENT_QUOTES, "UTF-8") ?></textarea>

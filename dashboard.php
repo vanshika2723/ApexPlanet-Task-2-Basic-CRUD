@@ -9,8 +9,24 @@ if (!isset($_SESSION["user_id"])) {
     exit;
 }
 
+// Role-based access control
+$userRole = $_SESSION["role"] ?? "editor";
+
+if (!in_array($userRole, ["admin", "editor"], true)) {
+    http_response_code(403);
+    exit("Access denied.");
+}
+
+$isAdmin = ($userRole === "admin");
+
+// Ensure a CSRF token is available for protected form submissions
+if (empty($_SESSION["csrf_token"])) {
+    $_SESSION["csrf_token"] = bin2hex(random_bytes(32));
+}
+
 // Search and pagination settings
 $search = trim($_GET["search"] ?? "");
+$search = mb_substr($search, 0, 150);
 $postsPerPage = 5;
 $page = filter_input(INPUT_GET, "page", FILTER_VALIDATE_INT);
 $page = ($page && $page > 0) ? $page : 1;
@@ -22,7 +38,8 @@ $totalPages = 0;
 
 try {
     // Total number of posts (independent of the search filter)
-    $totalStmt = $pdo->query("SELECT COUNT(*) FROM posts");
+    $totalStmt = $pdo->prepare("SELECT COUNT(*) FROM posts");
+    $totalStmt->execute();
     $totalPosts = (int) $totalStmt->fetchColumn();
 
     // Build a safe search condition for title and content
@@ -827,7 +844,22 @@ a:focus-visible {
     .pagination { gap: 6px; }
     .pagination a, .pagination span { min-width: 36px; height: 36px; padding: 0 10px; }
 }
+.logout-btn {
+    border: none;
+    background: transparent;
+    color: #625d79;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    padding: 10px 15px;
+    border-radius: 10px;
+    cursor: pointer;
+}
 
+.logout-btn:hover {
+    color: #7048d8;
+    background: #f1edff;
+}
     </style>
 
 </head>
@@ -854,13 +886,21 @@ a:focus-visible {
 
             <span class="welcome-user">
                 Welcome,
-                <?= htmlspecialchars($_SESSION["username"], ENT_QUOTES, "UTF-8") ?>
+                <?= htmlspecialchars($_SESSION["username"] ?? "User", ENT_QUOTES, "UTF-8") ?>
+                |
+                <?= htmlspecialchars(ucfirst($userRole), ENT_QUOTES, "UTF-8") ?>
             </span>
 
-            <a href="logout.php" class="logout-btn">
-                Logout ↗
-            </a>
+          <form method="POST" action="logout.php" style="display:inline;">
+    <input
+        type="hidden"
+        name="csrf_token"
+        value="<?= htmlspecialchars($_SESSION["csrf_token"], ENT_QUOTES, "UTF-8") ?>"
+    >
 
+    <button type="submit" class="logout-btn">Logout</button>
+</form>
+               
         </div>
 
     </div>
@@ -1060,26 +1100,30 @@ a:focus-visible {
                                 ✎ Edit
                             </a>
 
-                            <form
-                                method="POST"
-                                action="delete.php"
-                                onsubmit="return confirm('Are you sure you want to delete this post?');"
-                            >
-
-                                <input
-                                    type="hidden"
-                                    name="id"
-                                    value="<?= (int) $post["id"] ?>"
+                            <?php if ($isAdmin): ?>
+                                <form
+                                    method="POST"
+                                    action="delete.php"
+                                    onsubmit="return confirm('Are you sure you want to delete this post?');"
                                 >
-
-                                <button
-                                    type="submit"
-                                    class="btn btn-danger"
-                                >
-                                    Delete
-                                </button>
-
-                            </form>
+                                    <input
+                                        type="hidden"
+                                        name="id"
+                                        value="<?= (int) $post["id"] ?>"
+                                    >
+                                    <input
+                                        type="hidden"
+                                        name="csrf_token"
+                                        value="<?= htmlspecialchars($_SESSION["csrf_token"], ENT_QUOTES, "UTF-8") ?>"
+                                    >
+                                    <button
+                                        type="submit"
+                                        class="btn btn-danger"
+                                    >
+                                        Delete
+                                    </button>
+                                </form>
+                            <?php endif; ?>
 
                         </div>
 

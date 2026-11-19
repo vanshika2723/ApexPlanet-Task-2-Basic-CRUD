@@ -1,26 +1,37 @@
-
 <?php
 session_start();
 require_once "db.php";
 
+// 1. Authentication: only logged-in users can access this page.
 if (!isset($_SESSION["user_id"])) {
     header("Location: login.php");
     exit;
 }
 
-$id = filter_input(INPUT_GET, "id", FILTER_VALIDATE_INT);
+// 2. Authorization: allow only valid roles.
+$userRole = $_SESSION["role"] ?? "editor";
+if (!in_array($userRole, ["admin", "editor"], true)) {
+    http_response_code(403);
+    exit("Access denied.");
+}
 
+// 3. Ensure a CSRF token exists.
+if (empty($_SESSION["csrf_token"])) {
+    $_SESSION["csrf_token"] = bin2hex(random_bytes(32));
+}
+
+// 4. Validate post ID.
+$id = filter_input(INPUT_GET, "id", FILTER_VALIDATE_INT);
 if (!$id || $id < 1) {
     header("Location: dashboard.php");
     exit;
 }
 
 try {
-    $stmt = $pdo->prepare(
-        "SELECT id, title, content FROM posts WHERE id = ?"
-    );
+    // 5. Fetch post using a prepared statement.
+    $stmt = $pdo->prepare("SELECT id, title, content FROM posts WHERE id = ? LIMIT 1");
     $stmt->execute([$id]);
-    $post = $stmt->fetch();
+    $post = $stmt->fetch(PDO::FETCH_ASSOC);
 
     if (!$post) {
         http_response_code(404);
@@ -34,20 +45,40 @@ try {
 
 $message = "";
 
+// 6. Process updates only via POST.
 if ($_SERVER["REQUEST_METHOD"] === "POST") {
+    // Validate CSRF token.
+    $sessionToken = $_SESSION["csrf_token"] ?? "";
+    $submittedToken = $_POST["csrf_token"] ?? "";
+
+    if (
+        empty($sessionToken) ||
+        empty($submittedToken) ||
+        !hash_equals($sessionToken, $submittedToken)
+    ) {
+        http_response_code(403);
+        exit("Invalid security token. Please refresh the page and try again.");
+    }
+
+    // Server-side validation.
     $title = trim($_POST["title"] ?? "");
     $content = trim($_POST["content"] ?? "");
 
     if ($title === "" || $content === "") {
         $message = "Please enter both title and content.";
-    } elseif (strlen($title) > 255) {
+    } elseif (mb_strlen($title) > 255) {
         $message = "Title cannot exceed 255 characters.";
     } else {
         try {
+            // 7. Update post using a prepared statement.
             $update = $pdo->prepare(
-                "UPDATE posts SET title = ?, content = ? WHERE id = ?"
+                "UPDATE posts SET title = :title, content = :content WHERE id = :id"
             );
-            $update->execute([$title, $content, $id]);
+            $update->execute([
+                ":title" => $title,
+                ":content" => $content,
+                ":id" => $id
+            ]);
 
             header("Location: dashboard.php?status=updated");
             exit;
@@ -57,7 +88,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         }
     }
 
-    // Keep entered values visible if validation or saving fails.
+    // Keep values entered by the user when validation fails.
     $post["title"] = $title;
     $post["content"] = $content;
 }
@@ -500,6 +531,8 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
             <form method="POST" action="edit.php?id=<?= (int) $post["id"] ?>">
 
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION["csrf_token"], ENT_QUOTES, "UTF-8") ?>">
+
                 <div class="form-group">
 
                     <label for="title">
@@ -532,6 +565,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                         id="content"
                         name="content"
                         rows="8"
+                        minlength="1"
                         placeholder="Write your blog content here..."
                         required
                     ><?= htmlspecialchars($post["content"], ENT_QUOTES, "UTF-8") ?></textarea>
